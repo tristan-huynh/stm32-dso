@@ -129,8 +129,11 @@ int main(void)
 
       HAL_ADC_Start(&hadc2);
       if (HAL_ADC_PollForConversion(&hadc2, 1) == HAL_OK) {
-        // get trigger value
+        trigger_level = HAL_ADC_GetValue(&hadc2);
       }
+      
+      
+
       HAL_ADC_Stop(&hadc2);
 
       // draw grid
@@ -145,9 +148,16 @@ int main(void)
       }
       // horizontal tick marks
       for (int y = 16; y < 64; y += 16) {
-        ssd1306_Line(0, y, 4, y, White);
-        
+        ssd1306_Line(0, y, 4, y, White);  
       }
+
+      // trig line
+      uint8_t trig_y = 63 - (trigger_level * 63 / 4095);
+      for (int i = 0; i < 128; i += 8) {
+        ssd1306_Line(i, trig_y, i + 4, trig_y, White);
+      }
+    
+
       SSD1306_VERTEX waveform[128];
       for (int x = 0; x < 128; x++) {
         uint32_t sum = 0;
@@ -173,6 +183,7 @@ int main(void)
       float v_min = (min_val * 3.3f) / 4095.0f;
       float v_max = (max_val * 3.3f) / 4095.0f;
       float v_pp = v_max - v_min;
+      float trig = (trigger_level * 3.3f) / 4095.0f;
 
       uint16_t v_pp_int = (uint16_t)v_pp;
       uint16_t v_pp_dec = (uint16_t)((v_pp - v_pp_int) * 100);
@@ -180,15 +191,20 @@ int main(void)
       uint16_t v_max_int = (uint16_t)v_max;
       uint16_t v_max_dec = (uint16_t)((v_max - v_max_int) * 100);
 
+      uint16_t trig_int = (uint16_t)trig;
+      uint16_t trig_dec = (uint16_t)((trig - trig_int) * 100);
+
       char buffer[32];
       sprintf(buffer, "Vpp:%d.%dV", v_pp_int, v_pp_dec);
       ssd1306_SetCursor(3, 3);
       ssd1306_WriteString(buffer, Font_6x8, White);
       
-      sprintf(buffer, "Max:%d.%dV", v_max_int, v_max_dec);
+      // sprintf(buffer, "Max:%d.%dV", v_max_int, v_max_dec);
+      // ssd1306_SetCursor(70, 3);
+      // ssd1306_WriteString(buffer, Font_6x8, White);
+      sprintf(buffer, "Trg:%d.%dV", trig_int, trig_dec);
       ssd1306_SetCursor(70, 3);
       ssd1306_WriteString(buffer, Font_6x8, White);
-      
       ssd1306_UpdateScreen();
     }
     
