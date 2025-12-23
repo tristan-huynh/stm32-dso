@@ -23,6 +23,7 @@
 /* USER CODE BEGIN Includes */
 #include "ssd1306.h"
 #include "ssd1306_fonts.h"
+#include "math.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -175,12 +176,12 @@ int main(void)
     // draw grid 
     ssd1306_Fill(Black);
     
-    ssd1306_Line(0, 63, 127, 63, White);
+    ssd1306_Line(0, 32, 127, 32, White);
     ssd1306_Line(0, 0, 0, 63, White);
 
     // vertical tick marks
     for (int x = 16; x < 128; x += 16) {
-      ssd1306_Line(x, 59, x, 63, White); 
+      ssd1306_Line(x, 30, x, 34, White); 
     }
     // horizontal tick marks
     for (int y = 16; y < 64; y += 16) {
@@ -256,18 +257,17 @@ int main(void)
       float v_pp = v_max_at - v_min_at;
 
       // float trig = (trigger_level * 3.3f) / 4095.0f;
-      // with 10:1 attenuation + 3.3V offset
       float trig_adc = (trigger_level * 3.3f) / 4095.0f;
-      float trig = (trig_adc - 3.3f) * 10.0f;
+      float trig = (trig_adc / 3.3f) * 56.0f - 28.0f;
 
-      uint16_t v_pp_int = (uint16_t)v_pp;
-      uint16_t v_pp_dec = (uint16_t)((v_pp - v_pp_int) * 100);
+      int16_t v_pp_int = (int16_t)v_pp;
+      int16_t v_pp_dec = (int16_t)((v_pp - v_pp_int) * 100);
       
-      uint16_t v_max_int = (uint16_t)v_max;
-      uint16_t v_max_dec = (uint16_t)((v_max - v_max_int) * 100);
+      int16_t v_max_int = (int16_t)v_max;
+      int16_t v_max_dec = (int16_t)((v_max - v_max_int) * 100);
 
-      uint16_t trig_int = (uint16_t)trig;
-      uint16_t trig_dec = (uint16_t)((trig - trig_int) * 100);
+      int16_t trig_int = (int16_t)trig;
+      int16_t trig_dec = (int16_t)((trig - trig_int) * 100);
 
       switch(measure_mode) {
         case 0:
@@ -287,7 +287,9 @@ int main(void)
       ssd1306_WriteString(buffer, Font_6x8, White);
       
       // sprintf(buffer, "Max:%d.%dV", v_max_int, v_max_dec);
-
+      if (trig < 0) {
+        trig_dec = (uint16_t)(fabsf(trig - trig_int) * 100);
+      }
       sprintf(buffer, "Trg:%d.%dV", trig_int, trig_dec);
       ssd1306_SetCursor(70, 3);
       ssd1306_WriteString(buffer, Font_6x8, White);
