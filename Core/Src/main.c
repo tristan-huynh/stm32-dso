@@ -119,6 +119,7 @@ int main(void)
 
 
   char buffer[32]; //character buffer
+  uint8_t measure_mode = 0; // 0 vpp, 1 vmax, 2 freq
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -154,12 +155,17 @@ int main(void)
       }
     }
 
+    if (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_1) == GPIO_PIN_RESET) {
+      measure_mode = (measure_mode + 1) % 3;
+    }
+
     if (trigger_mode == 1&& !triggered) {
       HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_SET);
     } else {
       HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_RESET);
     }
     
+    // read from adc2 for trigger level
     HAL_ADC_Start(&hadc2);
     if (HAL_ADC_PollForConversion(&hadc2, 1) == HAL_OK) {
       trigger_level = HAL_ADC_GetValue(&hadc2);
@@ -243,8 +249,16 @@ int main(void)
       // assume 3.3V reference
       float v_min = (min_val * 3.3f) / 4095.0f;
       float v_max = (max_val * 3.3f) / 4095.0f;
-      float v_pp = v_max - v_min;
-      float trig = (trigger_level * 3.3f) / 4095.0f;
+      // float v_pp = v_max - v_min;
+      // with 10:1 attenutation + 3.3V offset
+      float v_min_at = (v_min - 3.3f) * 10.0f;
+      float v_max_at = (v_max - 3.3f) * 10.0f;
+      float v_pp = v_max_at - v_min_at;
+
+      // float trig = (trigger_level * 3.3f) / 4095.0f;
+      // with 10:1 attenuation + 3.3V offset
+      float trig_adc = (trigger_level * 3.3f) / 4095.0f;
+      float trig = (trig_adc - 3.3f) * 10.0f;
 
       uint16_t v_pp_int = (uint16_t)v_pp;
       uint16_t v_pp_dec = (uint16_t)((v_pp - v_pp_int) * 100);
@@ -255,13 +269,25 @@ int main(void)
       uint16_t trig_int = (uint16_t)trig;
       uint16_t trig_dec = (uint16_t)((trig - trig_int) * 100);
 
-      sprintf(buffer, "Vpp:%d.%dV", v_pp_int, v_pp_dec);
+      switch(measure_mode) {
+        case 0:
+          // Vpp
+          sprintf(buffer, "Vpp:%d.%02dV", v_pp_int, v_pp_dec);
+          break;
+        case 1:
+          // Vmax
+          sprintf(buffer, "Max:%d.%02dV", v_max_int, v_max_dec);
+          break;
+        case 2:
+          sprintf(buffer, "Freq:NA");
+          break;
+      }
+      // sprintf(buffer, "Vpp:%d.%dV", v_pp_int, v_pp_dec);
       ssd1306_SetCursor(3, 3);
       ssd1306_WriteString(buffer, Font_6x8, White);
       
       // sprintf(buffer, "Max:%d.%dV", v_max_int, v_max_dec);
-      // ssd1306_SetCursor(70, 3);
-      // ssd1306_WriteString(buffer, Font_6x8, White);
+
       sprintf(buffer, "Trg:%d.%dV", trig_int, trig_dec);
       ssd1306_SetCursor(70, 3);
       ssd1306_WriteString(buffer, Font_6x8, White);
@@ -568,6 +594,12 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, GPIO_PIN_RESET);
 
+  /*Configure GPIO pins : PB1 PB4 PB5 */
+  GPIO_InitStruct.Pin = GPIO_PIN_1|GPIO_PIN_4|GPIO_PIN_5;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
   /*Configure GPIO pin : PA8 */
   GPIO_InitStruct.Pin = GPIO_PIN_8;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
@@ -586,12 +618,6 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : PB4 PB5 */
-  GPIO_InitStruct.Pin = GPIO_PIN_4|GPIO_PIN_5;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
