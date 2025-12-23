@@ -263,12 +263,30 @@ int main(void)
       int16_t v_pp_int = (int16_t)v_pp;
       int16_t v_pp_dec = (int16_t)((v_pp - v_pp_int) * 100);
       
-      int16_t v_max_int = (int16_t)v_max;
-      int16_t v_max_dec = (int16_t)((v_max - v_max_int) * 100);
+      int16_t v_max_int = (int16_t)v_max_at;
+      int16_t v_max_dec = (int16_t)((v_max_at - v_max_int) * 100);
+
+      int16_t v_min_int = (int16_t)v_min_at;
+      int16_t v_min_dec = (int16_t)((v_min_at - v_min_int) * 100);
 
       int16_t trig_int = (int16_t)trig;
       int16_t trig_dec = (int16_t)((trig - trig_int) * 100);
 
+      if (v_pp < 0) {
+        v_pp_dec = (uint16_t)(fabsf(v_pp - v_pp_int) * 100);
+      }
+
+      if (trig < 0) {
+        trig_dec = (uint16_t)(fabsf(trig - trig_int) * 100);
+      }
+
+      if (v_max_int < 0) {
+        v_max_dec = (uint16_t)(fabsf(v_max_at - v_max_int) * 100);
+      }
+
+      if (v_min_int < 0 ) {
+        v_min_dec = (uint16_t)(fabsf(v_min_at - v_min_int) * 100);
+      } 
       switch(measure_mode) {
         case 0:
           // Vpp
@@ -279,7 +297,7 @@ int main(void)
           sprintf(buffer, "Max:%d.%02dV", v_max_int, v_max_dec);
           break;
         case 2:
-          sprintf(buffer, "Freq:NA");
+          sprintf(buffer, "Min:%d.%02dV", v_min_int, v_min_dec);
           break;
       }
       // sprintf(buffer, "Vpp:%d.%dV", v_pp_int, v_pp_dec);
@@ -287,9 +305,7 @@ int main(void)
       ssd1306_WriteString(buffer, Font_6x8, White);
       
       // sprintf(buffer, "Max:%d.%dV", v_max_int, v_max_dec);
-      if (trig < 0) {
-        trig_dec = (uint16_t)(fabsf(trig - trig_int) * 100);
-      }
+
       sprintf(buffer, "Trg:%d.%dV", trig_int, trig_dec);
       ssd1306_SetCursor(70, 3);
       ssd1306_WriteString(buffer, Font_6x8, White);
