@@ -9,7 +9,8 @@
 /.cproject
 
 # Ignore vendor drivers
-/Drivers/
+/Drivers/CMSIS
+/Drivers/STM32*
 
 # Ignore OS-specific files
 .DS_Store

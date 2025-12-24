@@ -23,6 +23,7 @@
 /* USER CODE BEGIN Includes */
 #include "ssd1306.h"
 #include "ssd1306_fonts.h"
+#include "math.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -55,6 +56,8 @@ uint16_t trigger_level = 2048;
 volatile uint8_t adc_half_complete = 0;
 volatile uint8_t adc_full_complete = 0;
 uint8_t running = 1;
+uint8_t trigger_mode = 0;
+uint8_t triggered = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -111,10 +114,13 @@ int main(void)
   /* USER CODE BEGIN 2 */
   HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adc_buffer, GRAPH_HISTORY);
   // HAL_OPAMP_Start(&hopamp2);
-
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, GPIO_PIN_SET);
   ssd1306_Init();
   HAL_Delay(2000);
 
+
+  char buffer[32]; //character buffer
+  uint8_t measure_mode = 0; // 0 vpp, 1 vmax, 2 freq
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -130,6 +136,7 @@ int main(void)
         HAL_ADC_Stop_DMA(&hadc1);
         HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, GPIO_PIN_RESET);
         running = 0;
+        trigger_mode = 0;
       }
     }
     if (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_5) == GPIO_PIN_RESET) {
@@ -140,56 +147,97 @@ int main(void)
       }
     }
 
+    if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_11) == GPIO_PIN_RESET) {
+      trigger_mode = 1;
+      triggered = 0;
+      if (!running) {
+        HAL_ADC_Start_DMA(&hadc1, (uint32_t*)adc_buffer, GRAPH_HISTORY);
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, GPIO_PIN_SET);
+      }
+    }
 
+    if (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_1) == GPIO_PIN_RESET) {
+      measure_mode = (measure_mode + 1) % 3;
+    }
+
+    if (trigger_mode == 1&& !triggered) {
+      HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_SET);
+    } else {
+      HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_RESET);
+    }
+    
+    // read from adc2 for trigger level
+    HAL_ADC_Start(&hadc2);
+    if (HAL_ADC_PollForConversion(&hadc2, 1) == HAL_OK) {
+      trigger_level = HAL_ADC_GetValue(&hadc2);
+    }
+    HAL_ADC_Stop(&hadc2);
+
+    // draw grid 
+    ssd1306_Fill(Black);
+    
+    ssd1306_Line(0, 32, 127, 32, White);
+    ssd1306_Line(0, 0, 0, 63, White);
+
+    // vertical tick marks
+    for (int x = 16; x < 128; x += 16) {
+      ssd1306_Line(x, 30, x, 34, White); 
+    }
+    // horizontal tick marks
+    for (int y = 16; y < 64; y += 16) {
+      ssd1306_Line(0, y, 4, y, White);  
+    }
+
+    // trig line
+    uint8_t trig_y = 63 - (trigger_level * 63 / 4095);
+    for (int i = 0; i < 128; i += 8) {
+      ssd1306_Line(i, trig_y, i + 4, trig_y, White);
+    }
+
+    // DMA complete
     if (running && (adc_full_complete || adc_half_complete)) {
       if (running) {
         adc_full_complete = 0;
         adc_half_complete = 0;
       }
-      HAL_ADC_Start(&hadc2);
-      if (HAL_ADC_PollForConversion(&hadc2, 1) == HAL_OK) {
-        trigger_level = HAL_ADC_GetValue(&hadc2);
-      }
-      
-      
-
-      HAL_ADC_Stop(&hadc2);
-
-
-      // draw grid 
-      ssd1306_Fill(Black);
-      
-      ssd1306_Line(0, 63, 127, 63, White);
-      ssd1306_Line(0, 0, 0, 63, White);
-
-      // vertical tick marks
-      for (int x = 16; x < 128; x += 16) {
-        ssd1306_Line(x, 59, x, 63, White); 
-      }
-      // horizontal tick marks
-      for (int y = 16; y < 64; y += 16) {
-        ssd1306_Line(0, y, 4, y, White);  
+      // find trigger
+      int trigger_index = -1;
+      for (int i = 1; i < GRAPH_HISTORY; i++) {
+        if (adc_buffer[i-1] < trigger_level && adc_buffer[i] >= trigger_level) {
+          trigger_index = i;
+          break;
+        }
       }
 
-      // trig line
-      uint8_t trig_y = 63 - (trigger_level * 63 / 4095);
-      for (int i = 0; i < 128; i += 8) {
-        ssd1306_Line(i, trig_y, i + 4, trig_y, White);
+      if (trigger_mode == 1 && trigger_index >= 0 && !triggered) {
+        triggered = 1;
+        HAL_ADC_Stop_DMA(&hadc1);
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, GPIO_PIN_RESET);
+        running = 0;
       }
-    
+
+      int start_idx = (trigger_index >= 0) ? trigger_index : 0;
 
       SSD1306_VERTEX waveform[128];
       for (int x = 0; x < 128; x++) {
         uint32_t sum = 0;
         // average 32 consecutive samples for each pixel
+        // for (int i = 0; i < 32; i++) {
+        //     sum += adc_buffer[x * 32 + i];
+        // }
+
         for (int i = 0; i < 32; i++) {
-            sum += adc_buffer[x * 32 + i];
+          int idx = start_idx + x * 32 + i;
+          if (idx < GRAPH_HISTORY) {
+            sum += adc_buffer[idx];
+          }
         }
         uint16_t adc_val = sum / 32;
         uint8_t y = 63 - (adc_val * 63 / 4095);
         waveform[x].x = x;
         waveform[x].y = y;
       }
+
       ssd1306_Polyline(waveform, 128, White);
       
       // min max
@@ -202,32 +250,69 @@ int main(void)
       // assume 3.3V reference
       float v_min = (min_val * 3.3f) / 4095.0f;
       float v_max = (max_val * 3.3f) / 4095.0f;
-      float v_pp = v_max - v_min;
-      float trig = (trigger_level * 3.3f) / 4095.0f;
+      // float v_pp = v_max - v_min;
+      // with 10:1 attenutation + 3.3V offset
+      float v_min_at = (v_min - 3.3f) * 10.0f;
+      float v_max_at = (v_max - 3.3f) * 10.0f;
+      float v_pp = v_max_at - v_min_at;
 
-      uint16_t v_pp_int = (uint16_t)v_pp;
-      uint16_t v_pp_dec = (uint16_t)((v_pp - v_pp_int) * 100);
+      // float trig = (trigger_level * 3.3f) / 4095.0f;
+      float trig_adc = (trigger_level * 3.3f) / 4095.0f;
+      float trig = (trig_adc / 3.3f) * 56.0f - 28.0f;
+
+      int16_t v_pp_int = (int16_t)v_pp;
+      int16_t v_pp_dec = (int16_t)((v_pp - v_pp_int) * 100);
       
-      uint16_t v_max_int = (uint16_t)v_max;
-      uint16_t v_max_dec = (uint16_t)((v_max - v_max_int) * 100);
+      int16_t v_max_int = (int16_t)v_max_at;
+      int16_t v_max_dec = (int16_t)((v_max_at - v_max_int) * 100);
 
-      uint16_t trig_int = (uint16_t)trig;
-      uint16_t trig_dec = (uint16_t)((trig - trig_int) * 100);
+      int16_t v_min_int = (int16_t)v_min_at;
+      int16_t v_min_dec = (int16_t)((v_min_at - v_min_int) * 100);
 
-      char buffer[32];
-      sprintf(buffer, "Vpp:%d.%dV", v_pp_int, v_pp_dec);
+      int16_t trig_int = (int16_t)trig;
+      int16_t trig_dec = (int16_t)((trig - trig_int) * 100);
+
+      if (v_pp < 0) {
+        v_pp_dec = (uint16_t)(fabsf(v_pp - v_pp_int) * 100);
+      }
+
+      if (trig < 0) {
+        trig_dec = (uint16_t)(fabsf(trig - trig_int) * 100);
+      }
+
+      if (v_max_int < 0) {
+        v_max_dec = (uint16_t)(fabsf(v_max_at - v_max_int) * 100);
+      }
+
+      if (v_min_int < 0 ) {
+        v_min_dec = (uint16_t)(fabsf(v_min_at - v_min_int) * 100);
+      } 
+      switch(measure_mode) {
+        case 0:
+          // Vpp
+          sprintf(buffer, "Vpp:%d.%02dV", v_pp_int, v_pp_dec);
+          break;
+        case 1:
+          // Vmax
+          sprintf(buffer, "Max:%d.%02dV", v_max_int, v_max_dec);
+          break;
+        case 2:
+          sprintf(buffer, "Min:%d.%02dV", v_min_int, v_min_dec);
+          break;
+      }
+      // sprintf(buffer, "Vpp:%d.%dV", v_pp_int, v_pp_dec);
       ssd1306_SetCursor(3, 3);
       ssd1306_WriteString(buffer, Font_6x8, White);
       
       // sprintf(buffer, "Max:%d.%dV", v_max_int, v_max_dec);
-      // ssd1306_SetCursor(70, 3);
-      // ssd1306_WriteString(buffer, Font_6x8, White);
+
       sprintf(buffer, "Trg:%d.%dV", trig_int, trig_dec);
       ssd1306_SetCursor(70, 3);
       ssd1306_WriteString(buffer, Font_6x8, White);
+
       ssd1306_UpdateScreen();
     }
-    
+
     HAL_Delay(20);
   }
   /* USER CODE END 3 */
@@ -246,14 +331,12 @@ void SystemClock_Config(void)
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI|RCC_OSCILLATORTYPE_HSE;
-  RCC_OscInitStruct.HSEState = RCC_HSE_BYPASS;
-  RCC_OscInitStruct.HSEPredivValue = RCC_HSE_PREDIV_DIV1;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
   RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
-  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
-  RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL9;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
+  RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL16;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
     Error_Handler();
@@ -273,7 +356,7 @@ void SystemClock_Config(void)
     Error_Handler();
   }
   PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_I2C1;
-  PeriphClkInit.I2c1ClockSelection = RCC_I2C1CLKSOURCE_HSI;
+  PeriphClkInit.I2c1ClockSelection = RCC_I2C1CLKSOURCE_SYSCLK;
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
   {
     Error_Handler();
@@ -419,7 +502,7 @@ static void MX_I2C1_Init(void)
 
   /* USER CODE END I2C1_Init 1 */
   hi2c1.Instance = I2C1;
-  hi2c1.Init.Timing = 0x00100246;
+  hi2c1.Init.Timing = 0x0091FFFF;
   hi2c1.Init.OwnAddress1 = 0;
   hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
   hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
@@ -524,19 +607,35 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_8, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, GPIO_PIN_RESET);
+
+  /*Configure GPIO pins : PB1 PB4 PB5 */
+  GPIO_InitStruct.Pin = GPIO_PIN_1|GPIO_PIN_4|GPIO_PIN_5;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : PA8 */
+  GPIO_InitStruct.Pin = GPIO_PIN_8;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : PA11 */
+  GPIO_InitStruct.Pin = GPIO_PIN_11;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
   /*Configure GPIO pin : PB3 */
   GPIO_InitStruct.Pin = GPIO_PIN_3;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : PB4 PB5 */
-  GPIO_InitStruct.Pin = GPIO_PIN_4|GPIO_PIN_5;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
