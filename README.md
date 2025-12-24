@@ -2,6 +2,14 @@
 
 A simple digital storage oscilloscope (DSO) implementation using STM32F303K8 microcontroller with SSD1306 OLED display.
 
+![STM32 DSO Setup](Docs/img0.jpg)
+
+# Features
+
+- 12-bit ADC for high resolution sampling @ 64 MHz
+- Continous Sampling using DMA for real-time waveform display
+- Automatic Averaging with 32 consecutive samples averaged per display pixel
+
 ## Hardware Components
 
 - MCU: STM32 Nucleo-F303K8 (Nucleo-32 board)
@@ -24,7 +32,7 @@ A simple digital storage oscilloscope (DSO) implementation using STM32F303K8 mic
 - PB5 - Run button
 - PB4 - Stop button
 - PA11 - Single-shot trigger button
-- PB1 - Measure mode button
+- PB1 - Measure mode button (Vpp, Vmin, Vmax)
 
 ### Status LEDs
 - PB3 - Running indicator (green)
