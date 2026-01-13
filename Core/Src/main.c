@@ -24,6 +24,7 @@
 #include "ssd1306.h"
 #include "ssd1306_fonts.h"
 #include "math.h"
+#include <stdio.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
