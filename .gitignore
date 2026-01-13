@@ -1,6 +1,7 @@
 # Ignore build output folders
 /Debug/
 /Release/
+/build/
 
 # Ignore STM32CubeIDE metadata caches
 /.settings/
